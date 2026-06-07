@@ -1,0 +1,6 @@
+{
+  "name": "Gestion de Stocks",
+  "description": "Application locale d'inventaire, de gestion de stocks et des fournisseurs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
