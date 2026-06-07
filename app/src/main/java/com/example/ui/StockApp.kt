@@ -348,18 +348,28 @@ fun MainWorkspaceDashboard(viewModel: StockViewModel, company: Company) {
                                     ),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    imageVector = when(company.logoUri) {
-                                        "WINE" -> Icons.Default.WineBar
-                                        "BEER" -> Icons.Default.LocalBar
-                                        "BOX" -> Icons.Default.Inventory
-                                        "WAREHOUSE" -> Icons.Default.Warehouse
-                                        else -> Icons.Default.Storefront
-                                    },
-                                    contentDescription = "Logo",
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(16.dp)
-                                )
+                                val logo = company.logoUri
+                                if (logo.startsWith("content://") || logo.startsWith("file://") || logo.contains("/")) {
+                                    androidx.compose.foundation.Image(
+                                        painter = coil.compose.rememberAsyncImagePainter(logo),
+                                        contentDescription = "Photo Profil",
+                                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = when(logo) {
+                                            "WINE" -> Icons.Default.WineBar
+                                            "BEER" -> Icons.Default.LocalBar
+                                            "BOX" -> Icons.Default.Inventory
+                                            "WAREHOUSE" -> Icons.Default.Warehouse
+                                            else -> Icons.Default.Storefront
+                                        },
+                                        contentDescription = "Logo",
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
                             Column {
                                 Row(
@@ -725,65 +735,267 @@ fun ProductCardElement(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F6F9)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE4E0ED))
     ) {
-        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Row 1: Title & Action Icons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = item.product.designation,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Code: ${item.product.code} • Cat: ${item.product.category}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                }
+                Text(
+                    text = item.product.designation,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = Color(0xFF1C1B1F),
+                    modifier = Modifier.weight(1f)
+                )
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Edit, "Éditer", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Éditer",
+                            tint = Color(0xFF7E56C2),
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
-                    IconButton(onClick = { showDeleteAlert = true }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Delete, "Supprimer", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                    IconButton(
+                        onClick = { showDeleteAlert = true },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Supprimer",
+                            tint = Color(0xFFC64E4D),
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
+            // Row 2: Code Badge and Category Label
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column {
-                    Text("P.A. Achat", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                    Text(formatMoney(item.product.purchasePrice, currencySymbol), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                }
-                Column {
-                    Text("P.U. Vente", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                    Text(formatMoney(item.product.unitPrice, currencySymbol), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                }
-                Column {
-                    Text("Stock Final", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                Box(
+                    modifier = Modifier
+                        .background(Color(0xFFEBE5F5), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
                     Text(
-                        text = "${item.finalStock}", 
-                        style = MaterialTheme.typography.bodySmall, 
-                        fontWeight = FontWeight.Bold,
-                        color = if (item.finalStock <= 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                        text = "Code: ${item.product.code}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = Color(0xFF7E56C2)
                     )
                 }
-                Column {
-                    Text("Valeur", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                    Text(formatMoney(item.totalValue, currencySymbol), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+
+                Text(
+                    text = item.product.category,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                    color = Color(0xFF7E56C2)
+                )
+            }
+
+            HorizontalDivider(color = Color(0xFFE4E0ED).copy(alpha = 0.6f))
+
+            // Row 3: Grid P.A., P.U., Entrées, Sorties
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // P.A. (Achat)
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.Start
+                ) {
+                    Text(
+                        text = "P.A. (Achat)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF7A757F)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = formatMoney(item.product.purchasePrice, currencySymbol),
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                        color = Color(0xFF7E56C2)
+                    )
+                }
+
+                // P.U. (Vente)
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.Start
+                ) {
+                    Text(
+                        text = "P.U. (Vente)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF7A757F)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = formatMoney(item.product.unitPrice, currencySymbol),
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                        color = Color(0xFF1C1B1F)
+                    )
+                }
+
+                // Entrées
+                Column(
+                    modifier = Modifier.weight(0.8f),
+                    horizontalAlignment = Alignment.Start
+                ) {
+                    Text(
+                        text = "Entrées",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF7A757F)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "+${item.totalEntries}",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                        color = Color(0xFF508D69)
+                    )
+                }
+
+                // Sorties
+                Column(
+                    modifier = Modifier.weight(0.8f),
+                    horizontalAlignment = Alignment.Start
+                ) {
+                    Text(
+                        text = "Sorties",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF7A757F)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (item.totalSorties > 0) "-${item.totalSorties}" else "${-item.totalSorties}",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                        color = Color(0xFFC64E4D)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            // Row 4: Benefit & Supplier Debt next to each other
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Benefice
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.TrendingUp,
+                        contentDescription = "Bénéfice",
+                        tint = Color(0xFF508D69),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = "Bénéfice: ",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF7A757F)
+                    )
+                    Text(
+                        text = formatMoney(item.netProfit, currencySymbol),
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                        color = Color(0xFF508D69)
+                    )
+                }
+
+                // Dette Fourn
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ReceiptLong,
+                        contentDescription = "Dette",
+                        tint = Color.Gray,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = "Dette Fourn.: ",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF7A757F)
+                    )
+                    Text(
+                        text = formatMoney(item.debtToSupplier, currencySymbol),
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                        color = Color(0xFF1C1B1F)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            // Row 5: Bottom gray background row for Stock Final and Valorisation
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFEDEBF0), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.HomeWork,
+                            contentDescription = "Stock Final",
+                            tint = Color(0xFF7E56C2),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Stock Final: ",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF7A757F)
+                        )
+                        Text(
+                            text = "${item.finalStock}",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color(0xFF7E56C2)
+                        )
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "Valorisation: ",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF7A757F)
+                        )
+                        Text(
+                            text = formatMoney(item.totalValue, currencySymbol),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color(0xFF7E56C2)
+                        )
+                    }
                 }
             }
         }
@@ -1058,19 +1270,19 @@ fun EditProductDialog(
 // ==========================================
 @Composable
 fun StockBarChart(products: List<ProductUiState>) {
-    val chartData = products.filter { it.finalStock > 0 }.sortedByDescending { it.finalStock }.take(8)
+    val chartData = products
 
     if (chartData.isEmpty()) {
         Box(
             modifier = Modifier.fillMaxWidth().height(100.dp).padding(16.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text("Aucune stock à tracer pour l'instant.", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+            Text("Aucun stock à tracer pour l'instant.", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
         }
         return
     }
 
-    val maxStock = chartData.maxOfOrNull { it.finalStock } ?: 1.0
+    val maxStock = chartData.maxOfOrNull { m -> if (m.finalStock > 0) m.finalStock else 0.0 } ?: 1.0
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1566,25 +1778,26 @@ fun TabCharts(viewModel: StockViewModel) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Card(
                         modifier = Modifier.weight(1f),
-                        colors = CardDefaults.cardColors(containerColor = Color(230, 246, 235))
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFC8E6C9))
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
-                            Text("CHIFFRE VENTES", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(38, 166, 91))
+                            Text("CHIFFRE VENTES", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color(0xFF2E7D32))
                             Spacer(modifier = Modifier.height(2.dp))
-                            Text(formatMoney(periodSalesRevenue, currencySymbol), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(38, 166, 91))
-                            Text("${periodSalesQty.toInt()} unités", style = MaterialTheme.typography.bodySmall, color = Color(38, 166, 91).copy(alpha = 0.8f))
+                            Text(formatMoney(periodSalesRevenue, currencySymbol), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                            Text("${periodSalesQty.toInt()} unités", style = MaterialTheme.typography.bodySmall, color = Color(0xFF2E7D32).copy(alpha = 0.8f))
                         }
                     }
 
                     Card(
                         modifier = Modifier.weight(1f),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF4527A0))
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
-                            Text("BÉNÉFICE NET", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text("BÉNÉFICE NET", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color.White.copy(alpha = 0.9f))
                             Spacer(modifier = Modifier.height(2.dp))
-                            Text(formatMoney(periodNetProfit, currencySymbol), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            Text("Reste net", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f))
+                            Text(formatMoney(periodNetProfit, currencySymbol), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("Reste net", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.8f))
                         }
                     }
                 }
@@ -1592,26 +1805,26 @@ fun TabCharts(viewModel: StockViewModel) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Card(
                         modifier = Modifier.weight(1f),
-                        colors = CardDefaults.cardColors(containerColor = Color(253, 235, 235))
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFCDD2))
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
-                            Text("PERTES STOCKS", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                            Text("PERTES STOCKS", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color(0xFFC62828))
                             Spacer(modifier = Modifier.height(2.dp))
-                            Text(formatMoney(periodLossValue, currencySymbol), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
-                            Text("${periodLossQty.toInt()} unités perdues", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f))
+                            Text(formatMoney(periodLossValue, currencySymbol), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFFC62828))
+                            Text("${periodLossQty.toInt()} unités perdues", style = MaterialTheme.typography.bodySmall, color = Color(0xFFC62828).copy(alpha = 0.8f))
                         }
                     }
 
                     Card(
                         modifier = Modifier.weight(1f),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2530))
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
-                            Text("DETTE FOURN.", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("DETTE FOURN.", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color.White.copy(alpha = 0.8f))
                             Spacer(modifier = Modifier.height(2.dp))
-                            Text(formatMoney(periodSupplierDebt, currencySymbol), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("Crédit restant", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                            Text(formatMoney(periodSupplierDebt, currencySymbol), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("Crédit restant", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.7f))
                         }
                     }
                 }
@@ -1686,21 +1899,95 @@ fun TabCharts(viewModel: StockViewModel) {
             }
         }
 
+        var chartFilter by remember { mutableStateOf("ALL") }
+        var expandedChartFilter by remember { mutableStateOf(false) }
+
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
-                Text(
-                    text = "Quantité en Stock Actuel (Top 8)",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                StockBarChart(products = items)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = when (chartFilter) {
+                            "ALL" -> "Quantité en Stock (Tous)"
+                            "TOP_5" -> "Quantité en Stock (Top 5)"
+                            "TOP_10" -> "Quantité en Stock (Top 10)"
+                            else -> "Quantité en Stock"
+                        },
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Box {
+                        OutlinedButton(
+                            onClick = { expandedChartFilter = true },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(30.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = when (chartFilter) {
+                                        "ALL" -> "Tous les Produits"
+                                        "TOP_5" -> "Top 5"
+                                        "TOP_10" -> "Top 10"
+                                        else -> "Filtre"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = "dropdown", modifier = Modifier.size(14.dp))
+                            }
+                        }
+
+                        DropdownMenu(
+                            expanded = expandedChartFilter,
+                            onDismissRequest = { expandedChartFilter = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Tous les Produits", style = MaterialTheme.typography.bodyMedium) },
+                                onClick = {
+                                    chartFilter = "ALL"
+                                    expandedChartFilter = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Top 5 Stocks", style = MaterialTheme.typography.bodyMedium) },
+                                onClick = {
+                                    chartFilter = "TOP_5"
+                                    expandedChartFilter = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Top 10 Stocks", style = MaterialTheme.typography.bodyMedium) },
+                                onClick = {
+                                    chartFilter = "TOP_10"
+                                    expandedChartFilter = false
+                                }
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+
+                val filteredChartProducts = remember(items, chartFilter) {
+                    val list = items.filter { it.finalStock >= 0 }
+                    when (chartFilter) {
+                        "TOP_5" -> list.sortedByDescending { it.finalStock }.take(5)
+                        "TOP_10" -> list.sortedByDescending { it.finalStock }.take(10)
+                        else -> list.sortedByDescending { it.finalStock } // ALL!
+                    }
+                }
+
+                StockBarChart(products = filteredChartProducts)
             }
         }
     }
@@ -1722,6 +2009,26 @@ fun TabBackup(viewModel: StockViewModel) {
     ) { uri: Uri? ->
         if (uri != null) {
             viewModel.importJsonBackup(context, uri, importOverwriteMode)
+        }
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                if (inputStream != null) {
+                    val file = java.io.File(context.filesDir, "profile_company_${compState?.id ?: "temp"}.png")
+                    file.outputStream().use { outputStream ->
+                        inputStream.use { it.copyTo(outputStream) }
+                    }
+                    viewModel.updateCompanyLogo(file.absolutePath)
+                    Toast.makeText(context, "Photo de profil mise à jour avec succès !", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Erreur de sélection : ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -1751,13 +2058,64 @@ fun TabBackup(viewModel: StockViewModel) {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "Éditer le profil corporatif",
+                        text = "Éditer le profil de l'Espace",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
+
+                    // Centered circular profile preview with click picker
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(72.dp)
+                                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                                .clickable { photoPickerLauncher.launch("image/*") },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val logo = compState?.logoUri ?: ""
+                            if (logo.startsWith("content://") || logo.startsWith("file://") || logo.contains("/")) {
+                                androidx.compose.foundation.Image(
+                                    painter = coil.compose.rememberAsyncImagePainter(logo),
+                                    contentDescription = "Avatar de l'Espace",
+                                    modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = when(logo) {
+                                        "WINE" -> Icons.Default.WineBar
+                                        "BEER" -> Icons.Default.LocalBar
+                                        "BOX" -> Icons.Default.Inventory
+                                        "WAREHOUSE" -> Icons.Default.Warehouse
+                                        else -> Icons.Default.Storefront
+                                    },
+                                    contentDescription = "Logo",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = { photoPickerLauncher.launch("image/*") },
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Icon(Icons.Default.PhotoCamera, contentDescription = "Caméra", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Sélectionner la photo (Galerie)", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(2.dp))
 
                     OutlinedTextField(
                         value = inputEnterpriseName,
