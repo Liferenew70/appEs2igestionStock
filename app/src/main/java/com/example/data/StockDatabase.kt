@@ -40,6 +40,28 @@ data class Movement(
     val supplierName: String = "" // Tracks which supplier this movement is associated with
 )
 
+@Entity(tableName = "product_deliveries", primaryKeys = ["companyId", "productCode"])
+data class ProductDelivery(
+    val companyId: String,
+    val productCode: String,
+    val deliveryDays: Int = 30,
+    val orderedQuantity: Double = 0.0,
+    val isOrdered: Boolean = false,
+    val expectedDeliveryDate: Long = 0L
+)
+
+@Entity(tableName = "invoice_records")
+data class InvoiceRecord(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val companyId: String,
+    val clientName: String,
+    val clientPhone: String,
+    val timestamp: Long,
+    val subType: String = "", // "VENTE" or "PERTE"
+    val productsJson: String, // Serialized JSON array of items: {code, designation, qty, price}
+    val totalAmount: Double
+)
+
 @Dao
 interface StockDao {
     // Multi-company Profiles
@@ -92,9 +114,26 @@ interface StockDao {
 
     @Query("UPDATE products SET unitPrice = unitPrice * :multiplier WHERE companyId = :companyId")
     suspend fun multiplyPrices(companyId: String, multiplier: Double)
+
+    // Deliveries
+    @Query("SELECT * FROM product_deliveries WHERE companyId = :companyId")
+    fun getProductDeliveries(companyId: String): Flow<List<ProductDelivery>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertProductDelivery(delivery: ProductDelivery)
+
+    @Query("DELETE FROM product_deliveries WHERE companyId = :companyId AND productCode = :productCode")
+    suspend fun deleteProductDelivery(companyId: String, productCode: String)
+
+    // Invoices
+    @Query("SELECT * FROM invoice_records WHERE companyId = :companyId ORDER BY timestamp DESC")
+    fun getInvoiceRecords(companyId: String): Flow<List<InvoiceRecord>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertInvoiceRecord(invoice: InvoiceRecord)
 }
 
-@Database(entities = [Company::class, Product::class, Movement::class], version = 3, exportSchema = false)
+@Database(entities = [Company::class, Product::class, Movement::class, ProductDelivery::class, InvoiceRecord::class], version = 4, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun stockDao(): StockDao
 

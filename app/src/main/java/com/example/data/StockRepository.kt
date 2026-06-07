@@ -207,4 +207,24 @@ class StockRepository(private val stockDao: StockDao) {
             return false
         }
     }
+
+    // Deliveries Segmented by Company
+    fun getProductDeliveries(companyId: String): Flow<List<ProductDelivery>> =
+        stockDao.getProductDeliveries(companyId)
+
+    suspend fun insertProductDelivery(delivery: ProductDelivery) {
+        stockDao.insertProductDelivery(delivery)
+    }
+
+    suspend fun deleteProductDelivery(companyId: String, productCode: String) {
+        stockDao.deleteProductDelivery(companyId, productCode)
+    }
+
+    // Invoices Segmented by Company
+    fun getInvoiceRecords(companyId: String): Flow<List<InvoiceRecord>> =
+        stockDao.getInvoiceRecords(companyId)
+
+    suspend fun insertInvoiceRecord(invoice: InvoiceRecord) {
+        stockDao.insertInvoiceRecord(invoice)
+    }
 }

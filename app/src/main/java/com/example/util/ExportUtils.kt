@@ -32,14 +32,15 @@ object ExportUtils {
         sb.append("Devise active;$currency\n\n")
 
         // Headers
-        sb.append("Code Article;Designation;Categorie;Prix Achat (P.A.);Prix Vente (P.U.);Stock Initial;Entrees (Qte);Sorties Ventes (Qte);Pertes (Qte);Stock Final;Valeur de Stock (P.U. * Stock Final);Ventes Totales Realisees;Benefice Net\n")
+        sb.append("Code Article;Designation;Categorie;Prix Achat (P.A.);Prix Vente (P.U.);Stock Initial;Entrees (Qte);Sorties Ventes (Qte);Pertes (Qte);Stock Final;Valeur de Stock (P.U. * Stock Final);Ventes Totales Realisees;Benefice des Ventes;Valeur des Pertes;Benefice Net\n")
 
         val entriesMap = movements.filter { it.type == "ENTREE" && it.subType != "REGLEMENT_FOURNISSEUR" }.groupBy { it.productCode }
-        val sortiesMap = movements.filter { it.type == "SORTIE" && it.subType != "REGLEMENT_FOURNISSEUR" }.groupBy { it.productCode }
 
         var grandTotalStock = 0.0
         var grandTotalValuation = 0.0
         var grandTotalSales = 0.0
+        var grandTotalSalesProfit = 0.0
+        var grandTotalLosses = 0.0
         var grandTotalProfit = 0.0
 
         for (p in products) {
@@ -55,11 +56,15 @@ object ExportUtils {
             val stockValue = finalStock * p.unitPrice
             
             val totalSalesValue = salesQty * p.unitPrice
-            val netProfitValue = (salesQty * (p.unitPrice - p.purchasePrice)) - (lossQty * p.purchasePrice)
+            val salesProfitValue = salesQty * (p.unitPrice - p.purchasePrice)
+            val lossValue = lossQty * p.purchasePrice
+            val netProfitValue = salesProfitValue - lossValue
 
             grandTotalStock += finalStock
             grandTotalValuation += stockValue
             grandTotalSales += totalSalesValue
+            grandTotalSalesProfit += salesProfitValue
+            grandTotalLosses += lossValue
             grandTotalProfit += netProfitValue
 
             sb.append("${p.code};")
@@ -74,6 +79,8 @@ object ExportUtils {
             sb.append(String.format(Locale.US, "%.1f", finalStock) + ";")
             sb.append(String.format(Locale.US, "%.2f", stockValue) + ";")
             sb.append(String.format(Locale.US, "%.2f", totalSalesValue) + ";")
+            sb.append(String.format(Locale.US, "%.2f", salesProfitValue) + ";")
+            sb.append(String.format(Locale.US, "%.2f", lossValue) + ";")
             sb.append(String.format(Locale.US, "%.2f", netProfitValue) + "\n")
         }
 
@@ -85,6 +92,8 @@ object ExportUtils {
         sb.append("Volume Total en Stock;** ${String.format(Locale.US, "%.1f", grandTotalStock)} **\n")
         sb.append("Valorisation Totale du Stock;** ${String.format(Locale.US, "%.2f", grandTotalValuation)} $currency **\n")
         sb.append("Accumulation Totale des Ventes;** ${String.format(Locale.US, "%.2f", grandTotalSales)} $currency **\n")
+        sb.append("Total Benefices des Ventes;** ${String.format(Locale.US, "%.2f", grandTotalSalesProfit)} $currency **\n")
+        sb.append("Total Valeur des Pertes de Stocks;** ${String.format(Locale.US, "%.2f", grandTotalLosses)} $currency **\n")
         sb.append("Total Benefices Net Realises;** ${String.format(Locale.US, "%.2f", grandTotalProfit)} $currency **\n")
 
         return sb.toString()
@@ -111,7 +120,6 @@ object ExportUtils {
             val printableWidth = pageWidth - (margin * 2)
 
             val entriesMap = movements.filter { it.type == "ENTREE" && it.subType != "REGLEMENT_FOURNISSEUR" }.groupBy { it.productCode }
-            val sortiesMap = movements.filter { it.type == "SORTIE" && it.subType != "REGLEMENT_FOURNISSEUR" }.groupBy { it.productCode }
 
             data class RowData(
                 val code: String,
@@ -121,14 +129,20 @@ object ExportUtils {
                 val sellingPriceStr: String,
                 val finalStockStr: String,
                 val totalSalesStr: String,
+                val salesProfitStr: String,
+                val lossValueStr: String,
                 val netProfitStr: String,
                 val rawValue: Double,
                 val rawSales: Double,
+                val rawSalesProfit: Double,
+                val rawLoss: Double,
                 val rawProfit: Double
             )
 
             var totalValorization = 0.0
             var cumulativeSales = 0.0
+            var cumulativeSalesProfits = 0.0
+            var cumulativeLosses = 0.0
             var cumulativeProfits = 0.0
 
             val rows = products.map { p ->
@@ -142,10 +156,14 @@ object ExportUtils {
                 val finalStock = p.initialStock + totalEntries - totalSorties
                 val stockValue = finalStock * p.unitPrice
                 val totalSales = salesQty * p.unitPrice
-                val netProfit = (salesQty * (p.unitPrice - p.purchasePrice)) - (lossQty * p.purchasePrice)
+                val salesProfit = salesQty * (p.unitPrice - p.purchasePrice)
+                val lossValue = lossQty * p.purchasePrice
+                val netProfit = salesProfit - lossValue
 
                 totalValorization += stockValue
                 cumulativeSales += totalSales
+                cumulativeSalesProfits += salesProfit
+                cumulativeLosses += lossValue
                 cumulativeProfits += netProfit
 
                 RowData(
@@ -156,9 +174,13 @@ object ExportUtils {
                     sellingPriceStr = String.format(Locale.getDefault(), "%,.0f", p.unitPrice),
                     finalStockStr = String.format(Locale.getDefault(), "%,.1f", finalStock),
                     totalSalesStr = String.format(Locale.getDefault(), "%,.0f", totalSales),
+                    salesProfitStr = String.format(Locale.getDefault(), "%,.0f", salesProfit),
+                    lossValueStr = String.format(Locale.getDefault(), "%,.0f", lossValue),
                     netProfitStr = String.format(Locale.getDefault(), "%,.0f", netProfit),
                     rawValue = stockValue,
                     rawSales = totalSales,
+                    rawSalesProfit = salesProfit,
+                    rawLoss = lossValue,
                     rawProfit = netProfit
                 )
             }
@@ -227,10 +249,10 @@ object ExportUtils {
                 style = Paint.Style.FILL
             }
 
-            val tableHeaders = arrayOf("Code", "Designation", "Categorie", "P.A.", "P.U. Vente", "Stock Final", "Ventes Realisees", "Benefice Net")
+            val tableHeaders = arrayOf("Code", "Designation", "P.A.", "P.U. Vente", "Stock Fin", "Ventes (Val)", "Ben. Ventes", "Pertes Stock", "Ben. Net")
             
             // Calculate relative responsive columns out of printableWidth (770 pt available)
-            val widthsScale = floatArrayOf(0.10f, 0.25f, 0.15f, 0.10f, 0.10f, 0.10f, 0.10f, 0.10f)
+            val widthsScale = floatArrayOf(0.10f, 0.22f, 0.08f, 0.08f, 0.08f, 0.11f, 0.11f, 0.10f, 0.12f)
             val colWidths = widthsScale.map { it * printableWidth }
 
             val rowHeight = 22f
@@ -272,7 +294,7 @@ object ExportUtils {
                     val colWidth = colWidths[i]
                     canvas.drawText(
                         tableHeaders[i],
-                        currentX + 6f,
+                        currentX + 5f,
                         contentStartY - headerHeight / 2f + 4f,
                         headerTextPaint
                     )
@@ -302,48 +324,52 @@ object ExportUtils {
                         var cellX = margin
                         
                         // 1. Code
-                        canvas.drawText(row.code, cellX + 6f, currentY + 14f, cellTextBoldPaint)
+                        canvas.drawText(row.code, cellX + 4f, currentY + 14f, cellTextBoldPaint)
                         cellX += colWidths[0]
 
                         // 2. Designation
                         var desc = row.designation
-                        if (cellTextPaint.measureText(desc) > colWidths[1] - 10f) {
-                            while (desc.isNotEmpty() && cellTextPaint.measureText("$desc...") > colWidths[1] - 10f) {
+                        if (cellTextPaint.measureText(desc) > colWidths[1] - 8f) {
+                            while (desc.isNotEmpty() && cellTextPaint.measureText("$desc...") > colWidths[1] - 8f) {
                                 desc = desc.dropLast(1)
                             }
                             desc = "$desc..."
                         }
-                        canvas.drawText(desc, cellX + 6f, currentY + 14f, cellTextPaint)
+                        canvas.drawText(desc, cellX + 4f, currentY + 14f, cellTextPaint)
                         cellX += colWidths[1]
 
-                        // 3. Category
-                        canvas.drawText(row.category, cellX + 6f, currentY + 14f, cellTextPaint)
+                        // 3. P.A.
+                        canvas.drawText(row.purchasePriceStr, cellX + 4f, currentY + 14f, cellTextPaint)
                         cellX += colWidths[2]
 
-                        // 4. Buying Price (P.A.)
-                        canvas.drawText(row.purchasePriceStr, cellX + 6f, currentY + 14f, cellTextPaint)
+                        // 4. P.U. Vente
+                        canvas.drawText(row.sellingPriceStr, cellX + 4f, currentY + 14f, cellTextPaint)
                         cellX += colWidths[3]
 
-                        // 5. Selling Price (P.U. Vente)
-                        canvas.drawText(row.sellingPriceStr, cellX + 6f, currentY + 14f, cellTextPaint)
+                        // 5. Stock Final
+                        canvas.drawText(row.finalStockStr, cellX + 4f, currentY + 14f, cellTextPaint)
                         cellX += colWidths[4]
 
-                        // 6. Stock Final
-                        canvas.drawText(row.finalStockStr, cellX + 6f, currentY + 14f, cellTextPaint)
+                        // 6. Ventes
+                        canvas.drawText(row.totalSalesStr, cellX + 4f, currentY + 14f, cellTextBoldPaint)
                         cellX += colWidths[5]
 
-                        // 7. Total Sales
-                        canvas.drawText(row.totalSalesStr, cellX + 6f, currentY + 14f, cellTextBoldPaint)
+                        // 7. Ben Ventes
+                        canvas.drawText(row.salesProfitStr, cellX + 4f, currentY + 14f, cellTextPaint)
                         cellX += colWidths[6]
 
-                        // 8. Net Profit
+                        // 8. Pertes
+                        canvas.drawText(row.lossValueStr, cellX + 4f, currentY + 14f, cellTextPaint)
+                        cellX += colWidths[7]
+
+                        // 9. Net Profit
                         val profitPaintToUse = if (row.rawProfit >= 0) profitTextPaint else Paint().apply {
                             color = Color.rgb(220, 53, 69)
                             textSize = 9.5f
                             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                             isAntiAlias = true
                         }
-                        canvas.drawText(row.netProfitStr, cellX + 6f, currentY + 14f, profitPaintToUse)
+                        canvas.drawText(row.netProfitStr, cellX + 4f, currentY + 14f, profitPaintToUse)
 
                         currentY += rowHeight
                         currentItemIndex++
@@ -352,7 +378,7 @@ object ExportUtils {
 
                 // If this is the last page, draw the Totals and Footer Summary
                 if (currentItemIndex >= totalItems) {
-                    val finalBoxHeight = 45f
+                    val finalBoxHeight = 55f
                     if (currentY + finalBoxHeight + 10f <= pageHeight - 30f) {
                         canvas.drawRect(margin, currentY + 10f, pageWidth - margin, currentY + 10f + finalBoxHeight, totalBoxPaint)
                         canvas.drawRect(margin, currentY + 10f, pageWidth - margin, currentY + 10f + finalBoxHeight, gridPaint)
@@ -360,14 +386,25 @@ object ExportUtils {
                         val prefs = context.getSharedPreferences("stock_prefs_v2", Context.MODE_PRIVATE)
                         val currSymbol = prefs.getString("currency_symbol", "FCFA") ?: "FCFA"
                         
-                        val totalValStr = "Valorisation: ${String.format(Locale.getDefault(), "%,.0f", totalValorization)} $currSymbol"
+                        val totalValStr = "Valorisation Stock: ${String.format(Locale.getDefault(), "%,.0f", totalValorization)} $currSymbol"
                         val totalSalesStr = "Ventes: ${String.format(Locale.getDefault(), "%,.0f", cumulativeSales)} $currSymbol"
+                        val totalBenStr = "Bénéfice Ventes: ${String.format(Locale.getDefault(), "%,.0f", cumulativeSalesProfits)} $currSymbol"
+                        val totalLossStr = "Pertes Stock: ${String.format(Locale.getDefault(), "%,.0f", cumulativeLosses)} $currSymbol"
                         val totalProfitStr = "Bénéfice Net: ${String.format(Locale.getDefault(), "%,.0f", cumulativeProfits)} $currSymbol"
 
-                        canvas.drawText("TOTAL GENERAL ($totalItems Articles) :", margin + 12f, currentY + 36f, cellTextBoldPaint)
-                        canvas.drawText(totalValStr, margin + 210f, currentY + 36f, cellTextBoldPaint)
-                        canvas.drawText(totalSalesStr, margin + 410f, currentY + 36f, cellTextBoldPaint)
-                        canvas.drawText(totalProfitStr, margin + 610f, currentY + 36f, profitTextPaint)
+                        val redPaint = Paint().apply {
+                            color = Color.rgb(220, 53, 69)
+                            textSize = 9.5f
+                            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                            isAntiAlias = true
+                        }
+
+                        canvas.drawText("TOTAL GENERAL ($totalItems Articles) :", margin + 12f, currentY + 26f, cellTextBoldPaint)
+                        canvas.drawText(totalValStr, margin + 12f, currentY + 44f, cellTextBoldPaint)
+                        canvas.drawText(totalSalesStr, margin + 260f, currentY + 26f, cellTextBoldPaint)
+                        canvas.drawText(totalBenStr, margin + 260f, currentY + 44f, cellTextBoldPaint)
+                        canvas.drawText(totalLossStr, margin + 510f, currentY + 26f, redPaint)
+                        canvas.drawText(totalProfitStr, margin + 510f, currentY + 44f, profitTextPaint)
                     }
                 }
 
@@ -383,6 +420,148 @@ object ExportUtils {
                 pageNumber++
             }
 
+            val fileOutputStream = FileOutputStream(file)
+            pdfDoc.writeTo(fileOutputStream)
+            fileOutputStream.flush()
+            fileOutputStream.close()
+            pdfDoc.close()
+            return true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return false
+        }
+    }
+
+    fun generateInvoicePdf(
+        context: Context,
+        file: File,
+        companyName: String,
+        clientName: String,
+        clientPhone: String,
+        timestamp: Long,
+        totalAmount: Double,
+        subType: String,
+        productsJson: String,
+        currencySymbol: String
+    ): Boolean {
+        try {
+            val pdfDoc = PdfDocument()
+            val pageWidth = 595
+            val pageHeight = 842
+            val margin = 36f
+            
+            val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create()
+            val page = pdfDoc.startPage(pageInfo)
+            val canvas = page.canvas
+            
+            val titlePaint = Paint().apply {
+                color = Color.rgb(128, 0, 32)
+                textSize = 20f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            
+            val companyPaint = Paint().apply {
+                color = Color.BLACK
+                textSize = 14f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            
+            val standardPaint = Paint().apply {
+                color = Color.rgb(60, 60, 65)
+                textSize = 11f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                isAntiAlias = true
+            }
+            
+            val boldPaint = Paint().apply {
+                color = Color.BLACK
+                textSize = 11f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+
+            val tableHeaderPaint = Paint().apply {
+                color = Color.WHITE
+                textSize = 11f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+
+            val headerBgPaint = Paint().apply {
+                color = Color.rgb(40, 44, 52)
+            }
+            
+            canvas.drawText("FACTURE CLIENT", margin, 60f, titlePaint)
+            canvas.drawText("Entreprise: $companyName", margin, 90f, companyPaint)
+            val dateStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(timestamp))
+            canvas.drawText("Date: $dateStr", margin, 110f, standardPaint)
+            
+            canvas.drawText("Client: $clientName", margin, 140f, boldPaint)
+            if (clientPhone.isNotEmpty()) {
+                canvas.drawText("Téléphone: $clientPhone", margin, 160f, standardPaint)
+            }
+            canvas.drawText("Type: ${if (subType == "PERTE") "Perte de Stock" else "Vente"}", margin, 180f, standardPaint)
+            
+            val topY = 210f
+            val tableHeight = 24f
+            canvas.drawRect(margin, topY, pageWidth - margin, topY + tableHeight, headerBgPaint)
+            
+            canvas.drawText("Désignation", margin + 10f, topY + 16f, tableHeaderPaint)
+            canvas.drawText("Quantité", margin + 250f, topY + 16f, tableHeaderPaint)
+            canvas.drawText("P.U.", margin + 350f, topY + 16f, tableHeaderPaint)
+            canvas.drawText("Total", margin + 440f, topY + 16f, tableHeaderPaint)
+            
+            var currentY = topY + tableHeight
+            val array = org.json.JSONArray(productsJson)
+            
+            val lineStrokePaint = Paint().apply {
+                color = Color.rgb(220, 220, 225)
+                strokeWidth = 1f
+            }
+            
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val des = obj.optString("designation", "Inconnu")
+                val qty = obj.optDouble("qty", 0.0)
+                val price = obj.optDouble("price", 0.0)
+                val sum = qty * price
+                
+                canvas.drawText(des, margin + 10f, currentY + 16f, standardPaint)
+                canvas.drawText(String.format(Locale.getDefault(), "%,.1f", qty), margin + 250f, currentY + 16f, standardPaint)
+                canvas.drawText(String.format(Locale.getDefault(), "%,.0f $currencySymbol", price), margin + 350f, currentY + 16f, standardPaint)
+                canvas.drawText(String.format(Locale.getDefault(), "%,.0f $currencySymbol", sum), margin + 440f, currentY + 16f, boldPaint)
+                
+                currentY += tableHeight
+                canvas.drawLine(margin, currentY, pageWidth - margin, currentY, lineStrokePaint)
+            }
+            
+            currentY += 20f
+            val totalStr = if (currencySymbol.contains("CFA") || currencySymbol.contains("XOF")) {
+                String.format(Locale.getDefault(), "%,.0f XOF", totalAmount)
+            } else {
+                String.format(Locale.getDefault(), "%,.2f %s", totalAmount, currencySymbol)
+            }
+            canvas.drawText("MONTANT TOTAL A PAYER :", margin + 230f, currentY + 16f, boldPaint)
+            val bordeauxPaint = Paint().apply {
+                color = Color.rgb(128, 0, 32)
+                textSize = 14f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            canvas.drawText(totalStr, margin + 410f, currentY + 18f, bordeauxPaint)
+            
+            val footerPaint = Paint().apply {
+                color = Color.GRAY
+                textSize = 9f
+                isAntiAlias = true
+            }
+            canvas.drawText("Merci pour votre confiance !", margin, pageHeight - 40f, footerPaint)
+            canvas.drawText("Généré automatiquement par Stock Management.", margin, pageHeight - 25f, footerPaint)
+            
+            pdfDoc.finishPage(page)
+            
             val fileOutputStream = FileOutputStream(file)
             pdfDoc.writeTo(fileOutputStream)
             fileOutputStream.flush()

@@ -4,10 +4,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.StockApp
+import com.example.ui.StockViewModel
 import com.example.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
@@ -15,8 +16,12 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
     setContent {
-      MyApplicationTheme {
-        StockApp(viewModel = viewModel())
+      val vm: StockViewModel = viewModel()
+      val isDark by vm.isDarkMode.collectAsState()
+      val customAccent by vm.customAccentHex.collectAsState()
+
+      MyApplicationTheme(darkTheme = isDark, customAccentHex = customAccent) {
+        StockApp(viewModel = vm)
       }
     }
   }

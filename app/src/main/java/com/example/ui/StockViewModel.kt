@@ -28,7 +28,9 @@ data class ProductUiState(
     val totalSalesQty: Double = 0.0,
     val totalLossQty: Double = 0.0,
     val netProfit: Double = 0.0,
-    val debtToSupplier: Double = 0.0
+    val debtToSupplier: Double = 0.0,
+    val totalNegotiatedGain: Double = 0.0,
+    val totalPurchaseLoss: Double = 0.0
 )
 
 data class SupplierUiState(
@@ -54,16 +56,10 @@ class StockViewModel(application: Application) : AndroidViewModel(application) {
     val activeCompanyId: StateFlow<String> = _activeCompanyId.asStateFlow()
 
     // Active Company object
-    val companyState: StateFlow<Company?> = _activeCompanyId
-        .flatMapLatest { id ->
-            if (id.isEmpty()) {
-                flowOf<Company?>(null)
-            } else {
-                flow {
-                    emit(repository.getCompanyById(id))
-                }
-            }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val companyState: StateFlow<Company?> = combine(_activeCompanyId, allCompanies) { id, list ->
+        if (id.isEmpty()) null
+        else list.find { it.id == id }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     // Products Segmented for this company
     val productsState: StateFlow<List<Product>> = _activeCompanyId
@@ -77,6 +73,20 @@ class StockViewModel(application: Application) : AndroidViewModel(application) {
         .flatMapLatest { id ->
             if (id.isEmpty()) flowOf(emptyList())
             else repository.getMovementsForCompany(id)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // Deliveries Flow for active company
+    val deliveriesState: StateFlow<List<ProductDelivery>> = _activeCompanyId
+        .flatMapLatest { id ->
+            if (id.isEmpty()) flowOf(emptyList())
+            else repository.getProductDeliveries(id)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // Invoices Flow for active company
+    val invoicesState: StateFlow<List<InvoiceRecord>> = _activeCompanyId
+        .flatMapLatest { id ->
+            if (id.isEmpty()) flowOf(emptyList())
+            else repository.getInvoiceRecords(id)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // Filters and Preferences Settings
@@ -147,8 +157,24 @@ class StockViewModel(application: Application) : AndroidViewModel(application) {
             val finalStock = p.initialStock + entries - sorties
             val totalValue = finalStock * p.unitPrice
             
-            // profit = (sales volume * profit margin) - loss value
-            val netProfit = (salesQty * (p.unitPrice - p.purchasePrice)) - (lossQty * p.purchasePrice)
+            // Calculate negotiated gains and purchase losses from entries
+            var negotiatedGains = 0.0
+            var purchaseLosses = 0.0
+            val purchaseEntrees = pMovements.filter { it.type == "ENTREE" && it.subType != "REGLEMENT_FOURNISSEUR" }
+            for (m in purchaseEntrees) {
+                val expectedCost = m.quantity * p.purchasePrice
+                val actualCost = m.amountPaid + m.amountRemaining
+                if (m.quantity > 0 && actualCost > 0) {
+                    if (actualCost < expectedCost) {
+                        negotiatedGains += (expectedCost - actualCost)
+                    } else if (actualCost > expectedCost) {
+                        purchaseLosses += (actualCost - expectedCost)
+                    }
+                }
+            }
+            
+            // profit = (sales volume * profit margin) - loss value + negotiated gains - losses from purchase price increases
+            val netProfit = (salesQty * (p.unitPrice - p.purchasePrice)) - (lossQty * p.purchasePrice) + negotiatedGains - purchaseLosses
 
             ProductUiState(
                 product = p,
@@ -159,7 +185,9 @@ class StockViewModel(application: Application) : AndroidViewModel(application) {
                 totalSalesQty = salesQty,
                 totalLossQty = lossQty,
                 netProfit = netProfit,
-                debtToSupplier = debtToSupplier
+                debtToSupplier = debtToSupplier,
+                totalNegotiatedGain = negotiatedGains,
+                totalPurchaseLoss = purchaseLosses
             )
         }.filter { uiState ->
             val matchesCategory = category == "Tout" || uiState.product.category.equals(category, ignoreCase = true)
@@ -219,14 +247,20 @@ class StockViewModel(application: Application) : AndroidViewModel(application) {
 
     // Login or select active company profile
     fun selectCompany(companyId: String) {
-        val trimmed = companyId.trim().lowercase(Locale.ROOT)
-        if (trimmed.isNotEmpty()) {
-            _activeCompanyId.value = trimmed
-            prefs.edit().putString("active_company_id", trimmed).apply()
+        val trimmed = companyId.trim()
+        val match = allCompanies.value.find {
+            it.id.trim().lowercase(Locale.ROOT) == trimmed.lowercase(Locale.ROOT) ||
+            it.id.trim().replace("\\s+".toRegex(), "_").lowercase(Locale.ROOT) == trimmed.replace("\\s+".toRegex(), "_").lowercase(Locale.ROOT)
+        }
+        val targetId = match?.id ?: trimmed
+        
+        if (targetId.isNotEmpty()) {
+            _activeCompanyId.value = targetId
+            prefs.edit().putString("active_company_id", targetId).apply()
             
             // Sync preferences
             viewModelScope.launch {
-                val comp = repository.getCompanyById(trimmed)
+                val comp = repository.getCompanyById(targetId)
                 if (comp != null) {
                     currencySymbol.value = comp.currencySymbol
                     customAccentHex.value = comp.customHex
@@ -418,10 +452,103 @@ class StockViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Direct Supplier Payment Operation (Deducted from general cash index or reduces supplier credit)
-    fun makeSupplierRepayment(supplierName: String, amountPaid: Double, sourceProductCode: String = "") {
+    // Delivery settings & tracking actions
+    fun addOrUpdateDelivery(productCode: String, daysOfDelay: Int, orderedQty: Double = 0.0, isOrdered: Boolean = false, expectedSecs: Long = 0L) {
         val cId = _activeCompanyId.value
         if (cId.isEmpty()) return
+        viewModelScope.launch {
+            repository.insertProductDelivery(
+                ProductDelivery(
+                    companyId = cId,
+                    productCode = productCode,
+                    deliveryDays = daysOfDelay,
+                    orderedQuantity = orderedQty,
+                    isOrdered = isOrdered,
+                    expectedDeliveryDate = expectedSecs
+                )
+            )
+        }
+    }
+
+    fun deleteDelivery(productCode: String) {
+        val cId = _activeCompanyId.value
+        if (cId.isEmpty()) return
+        viewModelScope.launch {
+            repository.deleteProductDelivery(cId, productCode)
+        }
+    }
+
+    // Invoice tracking action
+    fun addInvoice(clientName: String, clientPhone: String, subType: String, productsJson: String, totalAmount: Double) {
+        val cId = _activeCompanyId.value
+        if (cId.isEmpty()) return
+        viewModelScope.launch {
+            repository.insertInvoiceRecord(
+                InvoiceRecord(
+                    companyId = cId,
+                    clientName = clientName.trim(),
+                    clientPhone = clientPhone.trim(),
+                    timestamp = System.currentTimeMillis(),
+                    subType = subType,
+                    productsJson = productsJson,
+                    totalAmount = totalAmount
+                )
+            )
+        }
+    }
+
+    fun getCurrentMonthAvailableBalance(): Double {
+        val now = Calendar.getInstance()
+        val currentYear = now.get(Calendar.YEAR)
+        val currentMonth = now.get(Calendar.MONTH)
+
+        val prods = productsState.value
+        val movs = movementsState.value
+
+        val cal = Calendar.getInstance()
+
+        // 1. Calculate current month's sales
+        var salesSum = 0.0
+        val salesMovs = movs.filter { 
+            it.type == "SORTIE" && 
+            (it.subType == "VENTE" || it.subType.isEmpty()) 
+        }
+        for (m in salesMovs) {
+            cal.timeInMillis = m.timestamp
+            if (cal.get(Calendar.YEAR) == currentYear && cal.get(Calendar.MONTH) == currentMonth) {
+                val p = prods.find { it.code == m.productCode }
+                if (p != null) {
+                    salesSum += m.quantity * p.unitPrice
+                }
+            }
+        }
+
+        // 2. Subtract current month's supplier repayments
+        var repaymentSum = 0.0
+        val repaymentMovs = movs.filter { 
+            it.type == "SORTIE" && 
+            it.subType == "REGLEMENT_FOURNISSEUR" 
+        }
+        for (m in repaymentMovs) {
+            cal.timeInMillis = m.timestamp
+            if (cal.get(Calendar.YEAR) == currentYear && cal.get(Calendar.MONTH) == currentMonth) {
+                repaymentSum += m.amountPaid
+            }
+        }
+
+        return maxOf(0.0, salesSum - repaymentSum)
+    }
+
+    // Direct Supplier Payment Operation (Deducted from general cash index or reduces supplier credit)
+    fun makeSupplierRepayment(supplierName: String, amountPaid: Double, sourceProductCode: String = ""): Boolean {
+        val cId = _activeCompanyId.value
+        if (cId.isEmpty()) return false
+        
+        val available = getCurrentMonthAvailableBalance()
+        if (amountPaid > available) {
+            return false // Balance insufficient for this cycle!
+        }
+
         viewModelScope.launch {
             // If the user chooses a specific product, we link the repayment to that product's code
             val code = sourceProductCode.ifEmpty {
@@ -442,6 +569,7 @@ class StockViewModel(application: Application) : AndroidViewModel(application) {
             )
             repository.insertMovement(mov)
         }
+        return true
     }
 
     // Clear All Company Specific Data
@@ -498,6 +626,30 @@ class StockViewModel(application: Application) : AndroidViewModel(application) {
             shareFile(context, file, "application/pdf")
         } else {
             Toast.makeText(context, "Erreur lors de la génération du PDF", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun shareInvoicePdf(context: Context, invoice: InvoiceRecord) {
+        val comp = companyState.value ?: return
+        val file = File(context.cacheDir, "facture_${invoice.id}.pdf")
+        
+        val success = ExportUtils.generateInvoicePdf(
+            context = context,
+            file = file,
+            companyName = comp.name,
+            clientName = invoice.clientName,
+            clientPhone = invoice.clientPhone,
+            timestamp = invoice.timestamp,
+            totalAmount = invoice.totalAmount,
+            subType = invoice.subType,
+            productsJson = invoice.productsJson,
+            currencySymbol = currencySymbol.value
+        )
+        
+        if (success) {
+            shareFile(context, file, "application/pdf")
+        } else {
+            Toast.makeText(context, "Erreur lors de la génération du PDF de la facture", Toast.LENGTH_SHORT).show()
         }
     }
 

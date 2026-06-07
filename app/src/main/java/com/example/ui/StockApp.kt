@@ -325,6 +325,8 @@ fun MainWorkspaceDashboard(viewModel: StockViewModel, company: Company) {
     val tabs = listOf(
         TabItem("Inventaire", Icons.Default.Inventory),
         TabItem("Mouvements", Icons.Default.SwapHoriz),
+        TabItem("Facturer", Icons.Default.Receipt),
+        TabItem("Livraisons", Icons.Default.LocalShipping),
         TabItem("Analyses", Icons.Default.BarChart),
         TabItem("Données", Icons.Default.Backup),
         TabItem("Tutoriel", Icons.Default.MenuBook)
@@ -428,15 +430,17 @@ fun MainWorkspaceDashboard(viewModel: StockViewModel, company: Company) {
         bottomBar = {
             Column {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                NavigationBar(
+                ScrollableTabRow(
+                    selectedTabIndex = selectedTab,
                     containerColor = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 0.dp
+                    edgePadding = 0.dp,
+                    divider = {}
                 ) {
                     tabs.forEachIndexed { index, tab ->
-                        NavigationBarItem(
+                        Tab(
                             selected = selectedTab == index,
                             onClick = { selectedTab = index },
-                            label = { Text(tab.title, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp)) },
+                            text = { Text(tab.title, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp)) },
                             icon = { Icon(tab.icon, contentDescription = tab.title, modifier = Modifier.size(18.dp)) }
                         )
                     }
@@ -452,9 +456,11 @@ fun MainWorkspaceDashboard(viewModel: StockViewModel, company: Company) {
             when (selectedTab) {
                 0 -> TabInventory(viewModel)
                 1 -> TabMovements(viewModel)
-                2 -> TabCharts(viewModel)
-                3 -> TabBackup(viewModel)
-                4 -> TabTutorial()
+                2 -> TabInvoices(viewModel)
+                3 -> TabDeliveries(viewModel)
+                4 -> TabCharts(viewModel)
+                5 -> TabBackup(viewModel)
+                6 -> TabTutorial()
             }
         }
     }
@@ -483,7 +489,7 @@ fun TabInventory(viewModel: StockViewModel) {
         val currentTotalVal = items.sumOf { it.totalValue }
         
         val pricesMap = products.associate { it.code to it.unitPrice }
-        val totalSalesValue = movements.filter { m -> m.type == "SORTIE" && m.subType != "REGLEMENT_FOURNISSEUR" }.sumOf { it.quantity * (pricesMap[it.productCode] ?: 0.0) }
+        val totalSalesValue = movements.filter { m -> m.type == "SORTIE" && m.subType != "REGLEMENT_FOURNISSEUR" && m.subType != "PERTE" }.sumOf { it.quantity * (pricesMap[it.productCode] ?: 0.0) }
 
         Column(
             modifier = Modifier
@@ -945,6 +951,62 @@ fun ProductCardElement(
                 }
             }
 
+            if (item.totalNegotiatedGain > 0 || item.totalPurchaseLoss > 0) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (item.totalNegotiatedGain > 0) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.TrendingUp,
+                                contentDescription = "Négocié",
+                                tint = Color(0xFF388E3C),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "Gain Négo: ",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF7A757F)
+                            )
+                            Text(
+                                text = "+${formatMoney(item.totalNegotiatedGain, currencySymbol)}",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                color = Color(0xFF388E3C)
+                            )
+                        }
+                    }
+                    if (item.totalPurchaseLoss > 0) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.TrendingDown,
+                                contentDescription = "Perte d'achat",
+                                tint = Color(0xFFD32F2F),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "Surcoût P.A.: ",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF7A757F)
+                            )
+                            Text(
+                                text = "-${formatMoney(item.totalPurchaseLoss, currencySymbol)}",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                color = Color(0xFFD32F2F)
+                            )
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(2.dp))
 
             // Row 5: Bottom gray background row for Stock Final and Valorisation
@@ -1160,6 +1222,7 @@ fun AddProductDialog(
     var purchasePrice by remember { mutableStateOf("") }
     var initialStock by remember { mutableStateOf("") }
     var hasError by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -1180,7 +1243,7 @@ fun AddProductDialog(
                 OutlinedTextField(value = initialStock, onValueChange = { initialStock = it }, label = { Text("Stock Initial") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
 
                 if (hasError) {
-                    Text("Veuillez saisir des informations numériques valides.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Text(errorMsg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -1192,8 +1255,14 @@ fun AddProductDialog(
                             val pu = unitPrice.toDoubleOrNull()
                             val si = initialStock.toDoubleOrNull()
                             if (code.isNotBlank() && designation.isNotBlank() && category.isNotBlank() && pu != null && si != null) {
-                                onAdd(code, designation, category, pu, si, pa)
+                                if (pu < pa) {
+                                    errorMsg = "Le prix de vente ($pu $currency) doit être supérieur ou égal au prix d'achat ($pa $currency) pour éviter un bénéfice négatif."
+                                    hasError = true
+                                } else {
+                                    onAdd(code, designation, category, pu, si, pa)
+                                }
                             } else {
+                                errorMsg = "Veuillez remplir tous les champs obligatoires avec des valeurs numériques valides."
                                 hasError = true
                             }
                         }
@@ -1219,6 +1288,7 @@ fun EditProductDialog(
     var unitPrice by remember { mutableStateOf(item.product.unitPrice.toString()) }
     var initialStock by remember { mutableStateOf(item.product.initialStock.toString()) }
     var hasError by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -1239,7 +1309,7 @@ fun EditProductDialog(
                 OutlinedTextField(value = initialStock, onValueChange = { initialStock = it }, label = { Text("Stock Initial") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
 
                 if (hasError) {
-                    Text("Saisissez des valeurs numériques.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Text(errorMsg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -1251,8 +1321,14 @@ fun EditProductDialog(
                             val pu = unitPrice.toDoubleOrNull()
                             val si = initialStock.toDoubleOrNull()
                             if (designation.isNotBlank() && category.isNotBlank() && pu != null && si != null) {
-                                onEdit(item.product.code, designation, category, pu, si, pa)
+                                if (pu < pa) {
+                                    errorMsg = "Le prix de vente ($pu $currency) doit être supérieur ou égal au prix d'achat ($pa $currency) pour éviter un bénéfice négatif."
+                                    hasError = true
+                                } else {
+                                    onEdit(item.product.code, designation, category, pu, si, pa)
+                                }
                             } else {
+                                errorMsg = "Veuillez remplir tous les champs avec des valeurs numériques valides."
                                 hasError = true
                             }
                         }
@@ -1579,11 +1655,23 @@ fun TabMovements(viewModel: StockViewModel) {
         }
 
         if (showSupplierDialog) {
+            val localCtx = androidx.compose.ui.platform.LocalContext.current
             SuppliersManagerDialog(
                 suppliers = suppliers,
                 onDismiss = { showSupplierDialog = false },
                 onRepay = { name, amount ->
-                    viewModel.makeSupplierRepayment(name, amount)
+                    val success = viewModel.makeSupplierRepayment(name, amount)
+                    if (!success) {
+                        val available = viewModel.getCurrentMonthAvailableBalance()
+                        val currSym = viewModel.currencySymbol.value
+                        android.widget.Toast.makeText(
+                            localCtx, 
+                            "Solde mensuel insuffisant ! Disponible: ${String.format(java.util.Locale.getDefault(), "%,.0f", available)} $currSym", 
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        android.widget.Toast.makeText(localCtx, "Règlement fournisseur de " + String.format(java.util.Locale.getDefault(), "%,.0f", amount) + " enregistré !", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 }
             )
         }
@@ -2023,7 +2111,8 @@ fun TabBackup(viewModel: StockViewModel) {
                     file.outputStream().use { outputStream ->
                         inputStream.use { it.copyTo(outputStream) }
                     }
-                    viewModel.updateCompanyLogo(file.absolutePath)
+                    val timestamp = System.currentTimeMillis()
+                    viewModel.updateCompanyLogo(file.absolutePath + "?t=" + timestamp)
                     Toast.makeText(context, "Photo de profil mise à jour avec succès !", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
@@ -2113,6 +2202,15 @@ fun TabBackup(viewModel: StockViewModel) {
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Sélectionner la photo (Galerie)", style = MaterialTheme.typography.labelMedium)
                         }
+                        
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Remarque : Si la photo ne s'actualise pas instantanément après sélection, veuillez relancer l'application.",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
+                            color = Color.Gray,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(2.dp))
@@ -2955,6 +3053,839 @@ fun StockMovementCurveChart(movements: List<Movement>) {
             drawPath(pathEntries, Color(38, 166, 91), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f))
             drawPath(pathSorties, errorColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f))
         }
+    }
+}
+
+@Composable
+fun TabInvoices(viewModel: StockViewModel) {
+    val context = LocalContext.current
+    var subTab by remember { mutableIntStateOf(0) }
+    val currencySymbol by viewModel.currencySymbol.collectAsStateWithLifecycle()
+    val productsFlow by viewModel.productUiStates.collectAsStateWithLifecycle()
+    val invoicesFlow by viewModel.invoicesState.collectAsStateWithLifecycle()
+    
+    var clientName by remember { mutableStateOf("Client Comptant") }
+    var clientPhone by remember { mutableStateOf("") }
+    var searchQuery by remember { mutableStateOf("") }
+    
+    var cartMap by remember { mutableStateOf(emptyMap<String, Double>()) }
+    var showTypeConfirmationDialog by remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = { subTab = 0 },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (subTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (subTab == 0) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Default.AddShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Nouvelle Facture")
+            }
+            Button(
+                onClick = { subTab = 1 },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (subTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (subTab == 1) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Historique")
+            }
+        }
+
+        if (subTab == 0) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    Text("Destinataire de la Facture", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = clientName,
+                            onValueChange = { clientName = it },
+                            label = { Text("Nom du Client") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1.2f)
+                        )
+                        OutlinedTextField(
+                            value = clientPhone,
+                            onValueChange = { clientPhone = it },
+                            label = { Text("Téléphone") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                item {
+                    Text("Rechercher des articles à ajouter", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Saisir un nom d'article...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                val filteredProducts = productsFlow.filter {
+                    it.product.designation.contains(searchQuery, ignoreCase = true) ||
+                    it.product.code.contains(searchQuery, ignoreCase = true)
+                }
+
+                if (filteredProducts.isNotEmpty()) {
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text("Résultats de recherche :", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                Spacer(Modifier.height(4.dp))
+                                Row(
+                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    filteredProducts.take(8).forEach { prodState ->
+                                        val p = prodState.product
+                                        val stock = prodState.finalStock
+                                        Column(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(MaterialTheme.colorScheme.surface)
+                                                .clickable {
+                                                    val current = cartMap[p.code] ?: 0.0
+                                                    if (stock <= 0) {
+                                                        Toast.makeText(context, "Stock insuffisant pour cet article", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        cartMap = cartMap + (p.code to minOf(stock, current + 1.0))
+                                                    }
+                                                }
+                                                .padding(10.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Text(p.designation, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text("${formatMoney(p.unitPrice, currencySymbol)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                            Text("En stock: $stock", style = MaterialTheme.typography.labelSmall, color = if (stock > 0) Color(38, 166, 91) else Color.Red)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Text("Détails du panier :", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                }
+
+                if (cartMap.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Le panier est vide. Sélectionnez des articles ci-dessus.", color = Color.Gray, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                } else {
+                    items(cartMap.keys.toList()) { code ->
+                        val prodState = productsFlow.find { it.product.code == code }
+                        if (prodState != null) {
+                            val p = prodState.product
+                            val maxStock = prodState.finalStock
+                            val qty = cartMap[code] ?: 1.0
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1.5f)) {
+                                        Text(p.designation, fontWeight = FontWeight.Bold)
+                                        Text("P.U: ${formatMoney(p.unitPrice, currencySymbol)} | Max: $maxStock", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.weight(1.2f),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        IconButton(onClick = {
+                                            if (qty > 1.0) {
+                                                cartMap = cartMap + (code to qty - 1.0)
+                                            } else {
+                                                cartMap = cartMap - code
+                                            }
+                                        }) {
+                                            Icon(Icons.Default.Remove, contentDescription = null, modifier = Modifier.size(20.dp))
+                                        }
+                                        Text(
+                                            text = String.format(Locale.US, "%.1f", qty),
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 4.dp)
+                                        )
+                                        IconButton(onClick = {
+                                            if (qty < maxStock) {
+                                                cartMap = cartMap + (code to qty + 1.0)
+                                            } else {
+                                                Toast.makeText(context, "Limite de stock atteinte de $maxStock !", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }) {
+                                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                                        }
+                                    }
+
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        horizontalAlignment = Alignment.End
+                                    ) {
+                                        Text("${formatMoney(p.unitPrice * qty, currencySymbol)}", fontWeight = FontWeight.Bold)
+                                        IconButton(onClick = { cartMap = cartMap - code }) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Supprimer", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    val grandTotal = cartMap.entries.sumOf { entry ->
+                        val pState = productsFlow.find { it.product.code == entry.key }
+                        (pState?.product?.unitPrice ?: 0.0) * entry.value
+                    }
+
+                    item {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Total Général :", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                            Text("${formatMoney(grandTotal, currencySymbol)}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                        }
+                        
+                        Button(
+                            onClick = { showTypeConfirmationDialog = true },
+                            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(38, 166, 91))
+                        ) {
+                            Icon(Icons.Default.ReceiptLong, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Enregistrer et Générer la Facture")
+                        }
+                    }
+                }
+            }
+        } else {
+            if (invoicesFlow.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Aucune facture de vente ou perte enregistrée pour le moment.", color = Color.Gray, textAlign = TextAlign.Center)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(invoicesFlow) { invoice ->
+                        var expanded by remember { mutableStateOf(false) }
+
+                        ElevatedCard(
+                            modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text("Facture N° ${invoice.id}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                                        Text(SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(invoice.timestamp)), style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                    }
+                                    AssistChip(
+                                        onClick = {},
+                                        label = { Text(if (invoice.subType == "PERTE") "Perte / Écart" else "Vente") },
+                                        leadingIcon = {
+                                            Icon(
+                                                if (invoice.subType == "PERTE") Icons.Default.Warning else Icons.Default.TrendingUp,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(12.dp),
+                                                tint = if (invoice.subType == "PERTE") Color.Red else Color(38, 166, 91)
+                                            )
+                                        }
+                                    )
+                                }
+
+                                Spacer(Modifier.height(8.dp))
+                                Text("Client : ${invoice.clientName}", fontWeight = FontWeight.SemiBold)
+                                if (invoice.clientPhone.isNotEmpty()) {
+                                    Text("Tél: ${invoice.clientPhone}", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Total de la Facture :", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                    Text("${formatMoney(invoice.totalAmount, currencySymbol)}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = Color(38, 166, 91))
+                                }
+
+                                if (expanded) {
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                                    Text("Articles inclus :", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                    val itemsList = remember(invoice.productsJson) {
+                                        val res = mutableListOf<InvoiceItemTemp>()
+                                        try {
+                                            val arr = org.json.JSONArray(invoice.productsJson)
+                                            for (i in 0 until arr.length()) {
+                                                val obj = arr.getJSONObject(i)
+                                                res.add(
+                                                    InvoiceItemTemp(
+                                                        designation = obj.getString("designation"),
+                                                        qty = obj.getDouble("qty"),
+                                                        price = obj.getDouble("price")
+                                                    )
+                                                )
+                                            }
+                                        } catch (e: Exception) { e.printStackTrace() }
+                                        res
+                                    }
+
+                                    itemsList.forEach { itm ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text("- ${itm.designation} (x${String.format(Locale.getDefault(), "%.1f", itm.qty)})", style = MaterialTheme.typography.bodyMedium)
+                                            Text("${formatMoney(itm.qty * itm.price, currencySymbol)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    Button(
+                                        onClick = { viewModel.shareInvoicePdf(context, invoice) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Partager Facture PDF", fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showTypeConfirmationDialog) {
+        val totalSum = cartMap.entries.sumOf { entry ->
+            val pState = productsFlow.find { it.product.code == entry.key }
+            (pState?.product?.unitPrice ?: 0.0) * entry.value
+        }
+        AlertDialog(
+            onDismissRequest = { showTypeConfirmationDialog = false },
+            title = { Text("Valider la Facture") },
+            text = { Text("Sélectionnez la nature de cette sortie de stock globale de ${formatMoney(totalSum, currencySymbol)} pour mettre à jour automatiquement les stocks et l'inventaire.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val serializedArray = org.json.JSONArray()
+                        cartMap.forEach { entry ->
+                            val pState = productsFlow.find { it.product.code == entry.key }
+                            if (pState != null) {
+                                val p = pState.product
+                                val obj = org.json.JSONObject()
+                                obj.put("code", p.code)
+                                obj.put("designation", p.designation)
+                                obj.put("qty", entry.value)
+                                obj.put("price", p.unitPrice)
+                                serializedArray.put(obj)
+
+                                viewModel.addMovement(
+                                    productCode = p.code,
+                                    type = "SORTIE",
+                                    quantity = entry.value,
+                                    notes = "Généré via Facture client: ${clientName.trim()}",
+                                    subType = "VENTE"
+                                )
+                            }
+                        }
+
+                        viewModel.addInvoice(
+                            clientName = clientName.trim(),
+                            clientPhone = clientPhone.trim(),
+                            subType = "VENTE",
+                            productsJson = serializedArray.toString(),
+                            totalAmount = totalSum
+                        )
+                        
+                        Toast.makeText(context, "Facture de Vente validée avec succès !", Toast.LENGTH_LONG).show()
+                        cartMap = emptyMap()
+                        clientName = "Client Comptant"
+                        clientPhone = ""
+                        showTypeConfirmationDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(38, 166, 91))
+                ) {
+                    Text("Vente enregistrée")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        val serializedArray = org.json.JSONArray()
+                        cartMap.forEach { entry ->
+                            val pState = productsFlow.find { it.product.code == entry.key }
+                            if (pState != null) {
+                                val p = pState.product
+                                val obj = org.json.JSONObject()
+                                obj.put("code", p.code)
+                                obj.put("designation", p.designation)
+                                obj.put("qty", entry.value)
+                                obj.put("price", p.unitPrice)
+                                serializedArray.put(obj)
+
+                                viewModel.addMovement(
+                                    productCode = p.code,
+                                    type = "SORTIE",
+                                    quantity = entry.value,
+                                    notes = "Perte déclarée s/ Facture: ${clientName.trim()}",
+                                    subType = "PERTE"
+                                )
+                            }
+                        }
+
+                        viewModel.addInvoice(
+                            clientName = clientName.trim(),
+                            clientPhone = clientPhone.trim(),
+                            subType = "PERTE",
+                            productsJson = serializedArray.toString(),
+                            totalAmount = totalSum
+                        )
+
+                        Toast.makeText(context, "Facture de Perte déclarée avec succès !", Toast.LENGTH_LONG).show()
+                        cartMap = emptyMap()
+                        clientName = "Client Comptant"
+                        clientPhone = ""
+                        showTypeConfirmationDialog = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Perte déclarée")
+                }
+            }
+        )
+    }
+}
+
+data class InvoiceItemTemp(
+    val designation: String,
+    val qty: Double,
+    val price: Double
+)
+
+@Composable
+fun TabDeliveries(viewModel: StockViewModel) {
+    val context = LocalContext.current
+    val currencySymbol by viewModel.currencySymbol.collectAsStateWithLifecycle()
+    val productsFlow by viewModel.productUiStates.collectAsStateWithLifecycle()
+    val deliveriesFlow by viewModel.deliveriesState.collectAsStateWithLifecycle()
+    val movementsFlow by viewModel.movementsState.collectAsStateWithLifecycle()
+
+    var showLeadTimeDialog by remember { mutableStateOf(false) }
+    var selectedProductCodeForLeadTime by remember { mutableStateOf("") }
+    var inputLeadTimeDays by remember { mutableStateOf("30") }
+
+    var showOrderDialog by remember { mutableStateOf(false) }
+    var selectedProductCodeForOrder by remember { mutableStateOf("") }
+    var inputOrderQty by remember { mutableStateOf("") }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Text(
+                text = "Planification & Suivi de Livraison",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = "Évitez la rupture de stock grâce au calcul automatique de la fréquence de vos ventes moyennes par jour.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.Gray,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+
+        if (productsFlow.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Aucun produit enregistré pour la modélisation des livraisons.", color = Color.Gray)
+                }
+            }
+        } else {
+            items(productsFlow) { prodState ->
+                val p = prodState.product
+                val currentStock = prodState.finalStock
+                
+                val config = deliveriesFlow.find { it.productCode == p.code }
+                val leadTimeDays = config?.deliveryDays ?: 30
+                val isOrdered = config?.isOrdered ?: false
+                val expectedQty = config?.orderedQuantity ?: 0.0
+                val expectedDate = config?.expectedDeliveryDate ?: 0L
+
+                val dailySalesAvg = remember(p.code, movementsFlow) {
+                    val pMovements = movementsFlow.filter { 
+                        it.productCode == p.code && 
+                        it.type == "SORTIE" && 
+                        it.subType != "REGLEMENT_FOURNISSEUR" && 
+                        it.subType != "PERTE" 
+                    }
+                    if (pMovements.isEmpty()) {
+                        0.0
+                    } else {
+                        val minTime = pMovements.minOf { it.timestamp }
+                        val days = maxOf(1.0, (System.currentTimeMillis() - minTime) / (1000.0 * 60.0 * 60.0 * 24.0))
+                        val totalSold = pMovements.sumOf { it.quantity }
+                        totalSold / days
+                    }
+                }
+
+                val leadTimeDemand = dailySalesAvg * leadTimeDays
+                val safetyMargin = leadTimeDemand * 0.20
+                val recommendedOrderQty = maxOf(1.0, Math.ceil(leadTimeDemand + safetyMargin))
+
+                val remainingDays = if (dailySalesAvg <= 0.0) 999.0 else currentStock / dailySalesAvg
+                val daysToReorder = remainingDays - leadTimeDays
+
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1.2f)) {
+                                Text(p.designation, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                                Text("Code: ${p.code} | Stock actuel: $currentStock", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                            }
+                            IconButton(onClick = {
+                                selectedProductCodeForLeadTime = p.code
+                                inputLeadTimeDays = leadTimeDays.toString()
+                                showLeadTimeDialog = true
+                            }) {
+                                Icon(Icons.Default.Settings, contentDescription = "Configurer délais", tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("Fréquence Ventes / jour", fontSize = 11.sp, color = Color.Gray)
+                                Text(String.format(Locale.getDefault(), "%,.2f unités", dailySalesAvg), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                            Column {
+                                Text("Délai de Livraison", fontSize = 11.sp, color = Color.Gray)
+                                Text("$leadTimeDays jours", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("Sécurité recommandée", fontSize = 11.sp, color = Color.Gray)
+                                Text("${recommendedOrderQty.toInt()} unités", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(38, 166, 91))
+                            }
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+
+                        if (dailySalesAvg > 0.0) {
+                            val depletionTime = System.currentTimeMillis() + (remainingDays * 24 * 60 * 60 * 1000L).toLong()
+                            val depletionDateStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(depletionTime))
+                            
+                            val reorderTime = System.currentTimeMillis() + (daysToReorder * 24 * 60 * 60 * 1000L).toLong()
+                            val reorderDateStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(reorderTime))
+
+                            if (daysToReorder <= 0.0) {
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Text(
+                                            text = "⚠️ ALERTE RUPTURE DE STOCK IMMINENTE",
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                        Text(
+                                            text = "Pour éviter une rupture totale estimée le $depletionDateStr, vous devriez déjà commander ! Commande de sécurité suggérée : ${recommendedOrderQty.toInt()} unités.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            modifier = Modifier.padding(top = 2.dp)
+                                        )
+                                    }
+                                }
+                            } else {
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Text(
+                                            text = "⏱️ ANALYSE FORECAST SÉCURISÉE",
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                        Text(
+                                            text = "Stock suffisant d'ici le $depletionDateStr. Date estimée pour lancer la commande fournisseur : le $reorderDateStr pour être livré à temps.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.padding(top = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "ℹ️ En attente de données de vente suffisantes pour modéliser vos prévisions.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+                        if (isOrdered) {
+                            val deliveryDateStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(expectedDate))
+                            val isExceeded = System.currentTimeMillis() > expectedDate
+
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isExceeded) Color(253, 235, 235) else Color(230, 245, 235)
+                                ),
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                Icons.Default.LocalShipping, 
+                                                contentDescription = null, 
+                                                tint = if (isExceeded) Color.Red else Color(38, 166, 91),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(
+                                                text = if (isExceeded) "⚠️ DÉLAI DE LIVRAISON EXPIRÉ !" else "🚚 COMMANDE EN TOURNÉE",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.sp,
+                                                color = if (isExceeded) Color.Red else Color(38, 166, 91)
+                                            )
+                                        }
+                                        Text(
+                                            text = "${expectedQty.toInt()} unités",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = "Attendue le : $deliveryDateStr. S'il s'agit d'une commande vide ou non reçue, révisez son statut.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isExceeded) Color.Red else Color.DarkGray
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                        horizontalArrangement = Arrangement.End,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        TextButton(onClick = { viewModel.deleteDelivery(p.code) }) {
+                                            Text("Annuler commande", color = MaterialTheme.colorScheme.error)
+                                        }
+                                        Spacer(Modifier.width(8.dp))
+                                        Button(
+                                            onClick = {
+                                                viewModel.addMovement(
+                                                    productCode = p.code,
+                                                    type = "ENTREE",
+                                                    quantity = expectedQty,
+                                                    notes = "Réception livraison planifiée",
+                                                    subType = "CASH"
+                                                )
+                                                viewModel.deleteDelivery(p.code)
+                                                Toast.makeText(context, "Livraison réceptionnée! ${expectedQty.toInt()} unités ajoutées en stock.", Toast.LENGTH_LONG).show()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(38, 166, 91))
+                                        ) {
+                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Réceptionner", fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                Button(
+                                    onClick = {
+                                        selectedProductCodeForOrder = p.code
+                                        inputOrderQty = recommendedOrderQty.toInt().toString()
+                                        showOrderDialog = true
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Déclarer Commande en cours", fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showLeadTimeDialog) {
+        val curProd = productsFlow.find { it.product.code == selectedProductCodeForLeadTime }?.product
+        AlertDialog(
+            onDismissRequest = { showLeadTimeDialog = false },
+            title = { Text("Délai d'approvisionnement") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Combien de temps faut-il à votre fournisseur pour vous livrer ${curProd?.designation} en moyenne ?")
+                    OutlinedTextField(
+                        value = inputLeadTimeDays,
+                        onValueChange = { inputLeadTimeDays = it },
+                        label = { Text("Jours (ex: 30)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val days = inputLeadTimeDays.toIntOrNull() ?: 30
+                    val curDel = deliveriesFlow.find { it.productCode == selectedProductCodeForLeadTime }
+                    viewModel.addOrUpdateDelivery(
+                        productCode = selectedProductCodeForLeadTime,
+                        daysOfDelay = days,
+                        orderedQty = curDel?.orderedQuantity ?: 0.0,
+                        isOrdered = curDel?.isOrdered ?: false,
+                        expectedSecs = curDel?.expectedDeliveryDate ?: 0L
+                    )
+                    showLeadTimeDialog = false
+                    Toast.makeText(context, "Délai de livraison configuré à $days jours !", Toast.LENGTH_SHORT).show()
+                }) {
+                    Text("Sauvegarder")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLeadTimeDialog = false }) {
+                    Text("Annuler")
+                }
+            }
+        )
+    }
+
+    if (showOrderDialog) {
+        AlertDialog(
+            onDismissRequest = { showOrderDialog = false },
+            title = { Text("Suivi de Commande") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Entrez la quantité que vous avez commandée au fournisseur.")
+                    OutlinedTextField(
+                        value = inputOrderQty,
+                        onValueChange = { inputOrderQty = it },
+                        label = { Text("Quantité commandée") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val qty = inputOrderQty.toDoubleOrNull() ?: 0.0
+                    if (qty <= 0.0) {
+                        Toast.makeText(context, "Quantité invalide", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val config = deliveriesFlow.find { it.productCode == selectedProductCodeForOrder }
+                        val leadDays = config?.deliveryDays ?: 30
+                        val expectedTime = System.currentTimeMillis() + (leadDays.toLong() * 24L * 60L * 60L * 1000L)
+                        
+                        viewModel.addOrUpdateDelivery(
+                            productCode = selectedProductCodeForOrder,
+                            daysOfDelay = leadDays,
+                            orderedQty = qty,
+                            isOrdered = true,
+                            expectedSecs = expectedTime
+                        )
+                        showOrderDialog = false
+                        Toast.makeText(context, "Commande enregistrée ! Livraison prévue sous $leadDays jours.", Toast.LENGTH_LONG).show()
+                    }
+                }) {
+                    Text("Valider commande")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showOrderDialog = false }) {
+                    Text("Annuler")
+                }
+            }
+        )
     }
 }
 

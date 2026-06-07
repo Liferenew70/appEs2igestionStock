@@ -51,20 +51,26 @@ private val LightColorScheme =
 @Composable
 fun MyApplicationTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),
+  customAccentHex: String = "",
   // Disable dynamic colors by default so our handcrafted Professional Polish palette is rendered
   dynamicColor: Boolean = false,
   content: @Composable () -> Unit,
 ) {
-  val colorScheme =
-    when {
-      dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-        val context = LocalContext.current
-        if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-      }
-
-      darkTheme -> DarkColorScheme
-      else -> LightColorScheme
+  val baseScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+  val colorScheme = if (customAccentHex.isNotEmpty()) {
+    try {
+      val parsedColor = Color(android.graphics.Color.parseColor(customAccentHex))
+      baseScheme.copy(
+        primary = parsedColor,
+        primaryContainer = parsedColor.copy(alpha = 0.15f),
+        onPrimaryContainer = parsedColor
+      )
+    } catch (e: Exception) {
+      baseScheme
     }
+  } else {
+    baseScheme
+  }
 
   MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
 }
